@@ -1,0 +1,26 @@
+services:
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    container_name: execution-dynamodb
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports:
+      - "8000:8000"
+
+  app:
+    build: .
+    container_name: execution-service
+    ports:
+      - "8083:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-must-be-at-least-64-characters-long-for-hs512-ok}
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      DYNAMODB_AUTO_CREATE_TABLE: "true"
+      # Placeholder credentials: DynamoDB Local does not check them.
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      # Local runs have no New Relic account: keep the agent from retrying.
+      NEW_RELIC_ENABLED: "false"
+    depends_on:
+      - dynamodb

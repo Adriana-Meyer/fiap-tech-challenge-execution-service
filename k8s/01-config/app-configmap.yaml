@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: execution
+data:
+  SPRING_PROFILES_ACTIVE: docker
+  AWS_REGION: us-east-1
+  DYNAMODB_TABLE: execution-orders
+  NEW_RELIC_APP_NAME: workshop-execution-service
+  NEW_RELIC_LOG: STDOUT
+  NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+  NEW_RELIC_APPLICATION_LOGGING_LOCAL_DECORATING_ENABLED: "true"
+  NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
+  NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"

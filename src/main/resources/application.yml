@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: workshop-execution-service
+
+  autoconfigure:
+    # Authentication is purely token based (see JwtAuthenticationFilter); there
+    # is no user store, so Boot must not generate a default in-memory user.
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+app:
+  jwt:
+    # Same HS256 secret as the OS service, which issues the tokens.
+    secret: ${JWT_SECRET:dev-only-secret-must-be-at-least-64-characters-long-for-hs512-ok}
+
+  dynamodb:
+    table-name: ${DYNAMODB_TABLE:execution-orders}
+    region: ${AWS_REGION:us-east-1}
+    # Empty on AWS (default endpoint + credentials chain). Set to the emulator
+    # URL (DynamoDB Local / LocalStack) for local runs and tests.
+    endpoint: ${DYNAMODB_ENDPOINT:}
+    # Terraform owns the table on AWS; locally the service creates it if missing.
+    auto-create-table: ${DYNAMODB_AUTO_CREATE_TABLE:false}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.fiap.workshop: DEBUG
+    org.springframework.security: INFO
