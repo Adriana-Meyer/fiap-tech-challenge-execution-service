@@ -1,0 +1,164 @@
+name: Deploy to AWS (EKS)
+
+# Two triggers:
+#  - workflow_dispatch: manual deploy/destroy, used while the AWS Academy
+#    budget is limited (the cluster is not always up).
+#  - workflow_run: after a successful CI run on main, so the image for that
+#    commit is already on Docker Hub. It only fires when the repository
+#    variable AUTO_DEPLOY is 'true' — create it near delivery; without it
+#    the behavior stays manual.
+# Either way the AWS credentials in the repository secrets must be from an
+# active Lab session, otherwise the job fails (expected).
+#
+# Expects the cluster (os-infrastructure), the `execution` namespace
+# (execution-infrastructure) and the DynamoDB table
+# (execution-database-infrastructure) to already exist. There is no database
+# secret: the pods reach DynamoDB through the node IAM role.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deploy the service, or tear it down (delete the Service first, releasing the NLB, before the infrastructure repositories are destroyed)'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'homologacao'
+        type: choice
+        options:
+          - homologacao
+          - producao
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: tech-challenge-eks
+  NAMESPACE: execution
+
+jobs:
+  deploy:
+    name: Deploy to EKS
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && vars.AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event.inputs.environment || 'producao' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure kubectl for the EKS cluster
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+
+      - name: Check the namespace exists
+        run: |
+          kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || {
+            echo "Namespace '$NAMESPACE' not found. Apply execution-infrastructure first." >&2
+            exit 1
+          }
+
+      - name: Apply app config
+        run: kubectl apply -f k8s/01-config/app-configmap.yaml
+
+      - name: Create/update app secret (JWT, New Relic)
+        run: |
+          kubectl create secret generic app-secret \
+            --namespace "$NAMESPACE" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --from-literal=NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/update Docker Hub image pull secret
+        run: |
+          kubectl create secret docker-registry dockerhub-secret \
+            --namespace "$NAMESPACE" \
+            --docker-username="${{ secrets.DOCKERHUB_USERNAME }}" \
+            --docker-password="${{ secrets.DOCKERHUB_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy service
+        run: |
+          kubectl apply -f k8s/02-app/deployment.yaml
+          kubectl apply -f k8s/02-app/hpa.yaml
+          kubectl apply -f k8s/02-app/service.yaml
+          # :latest does not change the pod spec, so force a fresh pull.
+          kubectl rollout restart deployment/execution-service -n "$NAMESPACE"
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/execution-service -n "$NAMESPACE" --timeout=300s
+
+      - name: Wait for LoadBalancer hostname
+        id: lb
+        run: |
+          for _ in $(seq 1 30); do
+            HOST=$(kubectl get svc execution-service -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$HOST" ]; then
+              echo "host=$HOST" >> "$GITHUB_OUTPUT"
+              echo "Execution service LoadBalancer: $HOST"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for LoadBalancer hostname" >&2
+          exit 1
+
+      - name: Smoke test
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -sf "http://${{ steps.lb.outputs.host }}/actuator/health" | grep -q '"status":"UP"'; then
+              echo "Service is UP"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Service did not become healthy in time" >&2
+          exit 1
+
+  destroy:
+    name: Tear down service from EKS
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl for the EKS cluster
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+
+      # Deleting the Service first is what tells the AWS cloud-controller to
+      # release the NLB. Do this before destroying the Terraform of the
+      # infrastructure repositories, or the NLB (and its hourly cost) can be
+      # orphaned with no cluster left to clean it up.
+      - name: Delete service resources
+        run: |
+          kubectl delete -f k8s/02-app/service.yaml --ignore-not-found
+          kubectl delete -f k8s/02-app/hpa.yaml --ignore-not-found
+          kubectl delete -f k8s/02-app/deployment.yaml --ignore-not-found
+          kubectl delete secret app-secret dockerhub-secret -n "$NAMESPACE" --ignore-not-found
+
+      - name: Wait for the NLB to be released
+        run: |
+          for _ in $(seq 1 30); do
+            HOST=$(kubectl get svc execution-service -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -z "$HOST" ]; then
+              echo "LoadBalancer released (or Service already gone)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for the LoadBalancer to be released — check the AWS console before destroying the infrastructure repositories." >&2
+          exit 1
