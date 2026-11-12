@@ -32,7 +32,7 @@ public class EnqueueExecutionUseCase implements EnqueueExecutionInputPort {
 
     private ExecutionOrderResponse enqueue(EnqueueExecutionCommand command) {
         List<ExecutionTask> tasks = command.tasks().stream().map(EnqueueExecutionUseCase::toTask).toList();
-        ExecutionOrder order = ExecutionOrder.enqueue(command.serviceOrderId(), tasks);
+        ExecutionOrder order = ExecutionOrder.enqueue(command.serviceOrderId(), command.sagaId(), tasks);
         return ExecutionOrderResponse.from(repository.save(order));
     }
 

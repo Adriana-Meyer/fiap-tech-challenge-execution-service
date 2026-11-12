@@ -35,7 +35,7 @@ class EnqueueExecutionUseCaseTest {
     private final UUID taskId = UUID.randomUUID();
 
     private EnqueueExecutionCommand command() {
-        return new EnqueueExecutionCommand(orderId,
+        return new EnqueueExecutionCommand(orderId, UUID.randomUUID(),
                 List.of(new TaskCommand(taskId, UUID.randomUUID(), "Oil change", "MECHANICAL")));
     }
 
@@ -68,7 +68,7 @@ class EnqueueExecutionUseCaseTest {
     void shouldRejectDuplicatedTaskIds() {
         when(repository.findByServiceOrderId(orderId)).thenReturn(Optional.empty());
         UUID serviceId = UUID.randomUUID();
-        EnqueueExecutionCommand duplicated = new EnqueueExecutionCommand(orderId, List.of(
+        EnqueueExecutionCommand duplicated = new EnqueueExecutionCommand(orderId, UUID.randomUUID(), List.of(
                 new TaskCommand(taskId, serviceId, "A", "GENERAL"),
                 new TaskCommand(taskId, serviceId, "B", "GENERAL")));
 

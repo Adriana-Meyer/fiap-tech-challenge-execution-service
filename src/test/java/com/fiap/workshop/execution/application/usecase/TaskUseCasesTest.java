@@ -1,6 +1,8 @@
 package com.fiap.workshop.execution.application.usecase;
 
 import com.fiap.workshop.execution.application.dto.ExecutionOrderResponse;
+import com.fiap.workshop.execution.application.port.out.SagaEventPublisher;
+import com.fiap.workshop.execution.application.saga.event.ExecutionCompleted;
 import com.fiap.workshop.execution.domain.exception.InvalidStateException;
 import com.fiap.workshop.execution.domain.exception.ResourceNotFoundException;
 import com.fiap.workshop.execution.domain.model.execution.ExecutionOrder;
@@ -34,6 +36,9 @@ class TaskUseCasesTest {
     @Mock
     private MetricsPublisher metricsPublisher;
 
+    @Mock
+    private SagaEventPublisher eventPublisher;
+
     private StartTaskUseCase start;
     private FinishTaskUseCase finish;
 
@@ -44,7 +49,7 @@ class TaskUseCasesTest {
     @BeforeEach
     void setUp() {
         start = new StartTaskUseCase(repository);
-        finish = new FinishTaskUseCase(repository, metricsPublisher);
+        finish = new FinishTaskUseCase(repository, metricsPublisher, eventPublisher);
         lenient().when(repository.save(any(ExecutionOrder.class))).thenAnswer(i -> i.getArgument(0));
     }
 
@@ -79,6 +84,7 @@ class TaskUseCasesTest {
         assertEquals("IN_PROGRESS", response.status());
         assertEquals("COMPLETED", response.tasks().get(0).status());
         verify(metricsPublisher, never()).recordServiceOrderStatusDuration(any(), any(), anyLong());
+        verify(eventPublisher, never()).publish(any());
     }
 
     @Test
@@ -91,6 +97,43 @@ class TaskUseCasesTest {
 
         assertEquals("COMPLETED", response.status());
         verify(metricsPublisher).recordServiceOrderStatusDuration(eq(orderId), eq("EXECUTION"), anyLong());
+        verify(eventPublisher).publish(ExecutionCompleted.of(order.getSagaId(), orderId));
+    }
+
+    @Test
+    void shouldPublishTheCompletionAgainWhenTheTaskWasAlreadyFinishedAndTheOrderIsComplete() {
+        ExecutionOrder order = ExecutionUseCaseTestSupport.order(orderId, taskA);
+        order.startTask(taskA, "mech1");
+        order.finishTask(taskA);
+        when(repository.findByServiceOrderId(orderId)).thenReturn(Optional.of(order));
+
+        ExecutionOrderResponse response = finish.execute(orderId, taskA);
+
+        assertEquals("COMPLETED", response.status());
+        verify(eventPublisher).publish(ExecutionCompleted.of(order.getSagaId(), orderId));
+        verify(repository, never()).save(any());
+        verify(metricsPublisher, never()).recordServiceOrderStatusDuration(any(), any(), anyLong());
+    }
+
+    @Test
+    void shouldFailWhenTheCompletionCannotBePublishedSoTheMechanicCanTryAgain() {
+        ExecutionOrder order = ExecutionUseCaseTestSupport.order(orderId, taskA);
+        order.startTask(taskA, "mech1");
+        when(repository.findByServiceOrderId(orderId)).thenReturn(Optional.of(order));
+        org.mockito.Mockito.doThrow(new IllegalStateException("sns down")).when(eventPublisher).publish(any());
+
+        assertThrows(IllegalStateException.class, () -> finish.execute(orderId, taskA));
+    }
+
+    @Test
+    void shouldStillRefuseToFinishATaskTwiceWhileTheOrderIsNotComplete() {
+        ExecutionOrder order = ExecutionUseCaseTestSupport.order(orderId, taskA, taskB);
+        order.startTask(taskA, "mech1");
+        order.finishTask(taskA);
+        when(repository.findByServiceOrderId(orderId)).thenReturn(Optional.of(order));
+
+        assertThrows(InvalidStateException.class, () -> finish.execute(orderId, taskA));
+        verify(eventPublisher, never()).publish(any());
     }
 
     @Test

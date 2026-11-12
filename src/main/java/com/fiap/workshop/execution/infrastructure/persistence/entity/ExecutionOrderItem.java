@@ -18,6 +18,7 @@ import java.util.List;
 public class ExecutionOrderItem {
 
     private String serviceOrderId;
+    private String sagaId;
     private String status;
     private Instant createdAt;
     private Instant finishedAt;
@@ -27,6 +28,9 @@ public class ExecutionOrderItem {
     @DynamoDbPartitionKey
     public String getServiceOrderId() { return serviceOrderId; }
     public void setServiceOrderId(String serviceOrderId) { this.serviceOrderId = serviceOrderId; }
+
+    public String getSagaId() { return sagaId; }
+    public void setSagaId(String sagaId) { this.sagaId = sagaId; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

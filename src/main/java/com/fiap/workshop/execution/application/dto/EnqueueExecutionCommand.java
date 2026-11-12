@@ -9,5 +9,6 @@ import java.util.UUID;
 
 public record EnqueueExecutionCommand(
         @NotNull UUID serviceOrderId,
+        @NotNull UUID sagaId,
         @NotEmpty @Valid List<TaskCommand> tasks
 ) {}

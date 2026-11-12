@@ -32,7 +32,7 @@ class DynamoExecutionOrderRepositoryTest {
     private final UUID orderId = UUID.randomUUID();
 
     private ExecutionOrder order() {
-        return ExecutionOrder.enqueue(orderId,
+        return ExecutionOrder.enqueue(orderId, UUID.randomUUID(),
                 List.of(ExecutionTask.pending(UUID.randomUUID(), UUID.randomUUID(), "Oil change", "MECHANICAL")));
     }
 

@@ -6,6 +6,8 @@ metadata:
 data:
   SPRING_PROFILES_ACTIVE: docker
   AWS_REGION: us-east-1
+  # Created by execution-infrastructure (queue + DLQ). EVENTS_TOPIC_ARN is added by deploy-aws.yml.
+  COMMANDS_QUEUE: execution-commands
   DYNAMODB_TABLE: execution-orders
   NEW_RELIC_APP_NAME: workshop-execution-service
   NEW_RELIC_LOG: STDOUT

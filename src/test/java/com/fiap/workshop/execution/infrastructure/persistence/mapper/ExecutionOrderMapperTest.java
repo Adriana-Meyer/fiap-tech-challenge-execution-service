@@ -21,7 +21,7 @@ class ExecutionOrderMapperTest {
     @Test
     void shouldRoundTripAnOrderWithItsTasksAndVersion() {
         Instant start = Instant.parse("2026-01-01T10:00:00Z");
-        ExecutionOrder order = new ExecutionOrder(UUID.randomUUID(), List.of(
+        ExecutionOrder order = new ExecutionOrder(UUID.randomUUID(), UUID.randomUUID(), List.of(
                 new ExecutionTask(UUID.randomUUID(), UUID.randomUUID(), "Oil change", "MECHANICAL",
                         TaskStatus.COMPLETED, "mech1", start, start.plusSeconds(1800)),
                 ExecutionTask.pending(UUID.randomUUID(), UUID.randomUUID(), "Alignment", null)),
