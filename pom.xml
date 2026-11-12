@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <aws-sdk.version>2.25.60</aws-sdk.version>
+        <spring-cloud-aws.version>3.1.1</spring-cloud-aws.version>
         <newrelic.version>8.15.0</newrelic.version>
         <jjwt.version>0.12.5</jjwt.version>
         <springdoc.version>2.3.0</springdoc.version>
@@ -40,10 +40,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Also manages the AWS SDK v2 version (DynamoDB included) -->
             <dependency>
-                <groupId>software.amazon.awssdk</groupId>
-                <artifactId>bom</artifactId>
-                <version>${aws-sdk.version}</version>
+                <groupId>io.awspring.cloud</groupId>
+                <artifactId>spring-cloud-aws-dependencies</artifactId>
+                <version>${spring-cloud-aws.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -74,6 +75,16 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb-enhanced</artifactId>
+        </dependency>
+
+        <!-- ===== Messaging: SQS (commands in) and SNS (events out) ===== -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-sqs</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-sns</artifactId>
         </dependency>
 
         <!-- ===== New Relic custom events (no-op when the agent is not attached) ===== -->
@@ -132,6 +143,12 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>localstack</artifactId>
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>

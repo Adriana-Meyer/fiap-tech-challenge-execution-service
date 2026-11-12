@@ -17,6 +17,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-must-be-at-least-64-characters-long-for-hs512-ok}
       DYNAMODB_ENDPOINT: http://dynamodb:8000
       DYNAMODB_AUTO_CREATE_TABLE: "true"
+      # Standalone run: no SQS/SNS here. The full local environment (LocalStack) lives in the OS repository.
+      MESSAGING_ENABLED: "false"
       # Placeholder credentials: DynamoDB Local does not check them.
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local

@@ -9,7 +9,10 @@ import com.fiap.workshop.execution.domain.repository.ExecutionOrderRepository;
 import com.fiap.workshop.execution.infrastructure.security.JwtTestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.fiap.workshop.execution.application.port.out.SagaEventPublisher;
+import com.fiap.workshop.execution.application.saga.event.ExecutionCompleted;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -38,7 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "app.jwt.secret=" + JwtTestTokens.SECRET)
+@TestPropertySource(properties = {"app.jwt.secret=" + JwtTestTokens.SECRET, "app.messaging.enabled=false"})
 @DisplayName("Execution API (integration)")
 class ExecutionApiIntegrationTest {
 
@@ -61,6 +64,10 @@ class ExecutionApiIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /** The REST flow runs without a topic; the real publisher is exercised in SagaMessagingIntegrationTest. */
+    @MockBean
+    private SagaEventPublisher eventPublisher;
+
     @Autowired
     private EnqueueExecutionInputPort enqueue;
 
@@ -73,7 +80,7 @@ class ExecutionApiIntegrationTest {
 
     private UUID enqueueOrder(UUID... taskIds) {
         UUID orderId = UUID.randomUUID();
-        enqueue.execute(new EnqueueExecutionCommand(orderId, java.util.Arrays.stream(taskIds)
+        enqueue.execute(new EnqueueExecutionCommand(orderId, UUID.randomUUID(), java.util.Arrays.stream(taskIds)
                 .map(id -> new TaskCommand(id, UUID.randomUUID(), "Service " + id.toString().substring(0, 4), "MECHANICAL"))
                 .toList()));
         return orderId;
@@ -152,6 +159,7 @@ class ExecutionApiIntegrationTest {
                 .andExpect(jsonPath("$.tasks[0].mechanic").value("mech-ana"))
                 .andExpect(jsonPath("$.tasks[1].mechanic").value("mech-bia"))
                 .andExpect(jsonPath("$.tasks[1].durationMinutes").value(0));
+        org.mockito.Mockito.verify(eventPublisher).publish(org.mockito.ArgumentMatchers.any(ExecutionCompleted.class));
 
         mockMvc.perform(get("/api/v1/executions/analytics/avg-execution-time")
                         .header("Authorization", bearer("admin", "ADMIN")))
@@ -190,7 +198,7 @@ class ExecutionApiIntegrationTest {
                         .header("Authorization", bearer("m1", "MECHANIC")))
                 .andExpect(status().isOk());
 
-        enqueue.execute(new EnqueueExecutionCommand(orderId,
+        enqueue.execute(new EnqueueExecutionCommand(orderId, UUID.randomUUID(),
                 List.of(new TaskCommand(taskA, UUID.randomUUID(), "Other", "GENERAL"))));
 
         mockMvc.perform(get("/api/v1/executions/{id}", orderId).header("Authorization", bearer("m1", "MECHANIC")))

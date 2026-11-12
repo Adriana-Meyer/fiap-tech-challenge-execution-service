@@ -18,11 +18,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ExecutionOrderTest {
 
     private final UUID orderId = UUID.randomUUID();
+    private final UUID sagaId = UUID.randomUUID();
     private final UUID taskA = UUID.randomUUID();
     private final UUID taskB = UUID.randomUUID();
 
     private ExecutionOrder queued() {
-        return ExecutionOrder.enqueue(orderId, List.of(
+        return ExecutionOrder.enqueue(orderId, sagaId, List.of(
                 ExecutionTask.pending(taskA, UUID.randomUUID(), "Oil change", "MECHANICAL"),
                 ExecutionTask.pending(taskB, UUID.randomUUID(), "Alignment", "MECHANICAL")));
     }
@@ -36,15 +37,34 @@ class ExecutionOrderTest {
         assertNotNull(order.getCreatedAt());
         assertNull(order.getFinishedAt());
         assertNull(order.getVersion());
+        assertEquals(sagaId, order.getSagaId());
+    }
+
+    @Test
+    void shouldRequireTheSagaThatAskedForTheExecution() {
+        List<ExecutionTask> tasks = queued().getTasks();
+
+        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, null, tasks));
+    }
+
+    @Test
+    void shouldTellWhichTasksAreCompleted() {
+        ExecutionOrder order = queued();
+        order.startTask(taskA, "mech1");
+        order.finishTask(taskA);
+
+        assertTrue(order.isTaskCompleted(taskA));
+        assertFalse(order.isTaskCompleted(taskB));
+        assertThrows(ResourceNotFoundException.class, () -> order.isTaskCompleted(UUID.randomUUID()));
     }
 
     @Test
     void shouldRejectInvalidQueues() {
-        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(null, queued().getTasks()));
-        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, List.of()));
-        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, null));
+        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(null, UUID.randomUUID(), queued().getTasks()));
+        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, sagaId, List.of()));
+        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, sagaId, null));
         ExecutionTask task = ExecutionTask.pending(taskA, UUID.randomUUID(), "x", "GENERAL");
-        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, List.of(task, task)));
+        assertThrows(IllegalArgumentException.class, () -> ExecutionOrder.enqueue(orderId, sagaId, List.of(task, task)));
     }
 
     @Test

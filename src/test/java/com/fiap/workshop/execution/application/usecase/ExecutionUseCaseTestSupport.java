@@ -14,7 +14,7 @@ final class ExecutionUseCaseTestSupport {
     }
 
     static ExecutionOrder order(UUID orderId, UUID... taskIds) {
-        return ExecutionOrder.enqueue(orderId, java.util.Arrays.stream(taskIds)
+        return ExecutionOrder.enqueue(orderId, UUID.randomUUID(), java.util.Arrays.stream(taskIds)
                 .map(id -> task(id, UUID.randomUUID(), "Service " + id.toString().substring(0, 4)))
                 .toList());
     }

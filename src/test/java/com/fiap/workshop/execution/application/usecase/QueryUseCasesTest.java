@@ -101,7 +101,7 @@ class QueryUseCasesTest {
     }
 
     private static ExecutionOrder queuedAt(Instant createdAt) {
-        return new ExecutionOrder(UUID.randomUUID(),
+        return new ExecutionOrder(UUID.randomUUID(), UUID.randomUUID(),
                 List.of(ExecutionTask.pending(UUID.randomUUID(), UUID.randomUUID(), "x", "GENERAL")),
                 ExecutionOrderStatus.QUEUED, createdAt, null, 1L);
     }
@@ -112,7 +112,7 @@ class QueryUseCasesTest {
     }
 
     private static ExecutionOrder orderOf(ExecutionTask... tasks) {
-        return new ExecutionOrder(UUID.randomUUID(), List.of(tasks), ExecutionOrderStatus.IN_PROGRESS,
+        return new ExecutionOrder(UUID.randomUUID(), UUID.randomUUID(), List.of(tasks), ExecutionOrderStatus.IN_PROGRESS,
                 Instant.now(), null, 1L);
     }
 }

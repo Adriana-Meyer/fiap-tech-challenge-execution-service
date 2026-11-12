@@ -17,7 +17,7 @@ public class ExecutionOrderMapper {
 
     public ExecutionOrder toDomain(ExecutionOrderItem item) {
         List<ExecutionTask> tasks = item.getTasks().stream().map(this::toDomain).toList();
-        return new ExecutionOrder(UUID.fromString(item.getServiceOrderId()), tasks,
+        return new ExecutionOrder(UUID.fromString(item.getServiceOrderId()), UUID.fromString(item.getSagaId()), tasks,
                 ExecutionOrderStatus.valueOf(item.getStatus()), item.getCreatedAt(),
                 item.getFinishedAt(), item.getVersion());
     }
@@ -25,6 +25,7 @@ public class ExecutionOrderMapper {
     public ExecutionOrderItem toItem(ExecutionOrder order) {
         ExecutionOrderItem item = new ExecutionOrderItem();
         item.setServiceOrderId(order.getServiceOrderId().toString());
+        item.setSagaId(order.getSagaId().toString());
         item.setStatus(order.getStatus().name());
         item.setCreatedAt(order.getCreatedAt());
         item.setFinishedAt(order.getFinishedAt());

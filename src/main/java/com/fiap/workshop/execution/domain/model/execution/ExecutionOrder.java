@@ -18,15 +18,17 @@ import java.util.UUID;
 public class ExecutionOrder {
 
     private final UUID serviceOrderId;
+    private final UUID sagaId;
     private final List<ExecutionTask> tasks;
     private final Instant createdAt;
     private ExecutionOrderStatus status;
     private Instant finishedAt;
     private final Long version;
 
-    public ExecutionOrder(UUID serviceOrderId, List<ExecutionTask> tasks, ExecutionOrderStatus status,
+    public ExecutionOrder(UUID serviceOrderId, UUID sagaId, List<ExecutionTask> tasks, ExecutionOrderStatus status,
                           Instant createdAt, Instant finishedAt, Long version) {
         this.serviceOrderId = serviceOrderId;
+        this.sagaId = sagaId;
         this.tasks = List.copyOf(tasks);
         this.status = status;
         this.createdAt = createdAt;
@@ -34,9 +36,10 @@ public class ExecutionOrder {
         this.version = version;
     }
 
-    public static ExecutionOrder enqueue(UUID serviceOrderId, List<ExecutionTask> tasks) {
-        if (serviceOrderId == null) {
-            throw new IllegalArgumentException("Service order id is required");
+    /** @param sagaId the saga that asked for the execution; it is told when the order is completed */
+    public static ExecutionOrder enqueue(UUID serviceOrderId, UUID sagaId, List<ExecutionTask> tasks) {
+        if (serviceOrderId == null || sagaId == null) {
+            throw new IllegalArgumentException("Service order id and saga id are required");
         }
         if (tasks == null || tasks.isEmpty()) {
             throw new IllegalArgumentException("An execution order needs at least one task");
@@ -44,7 +47,7 @@ public class ExecutionOrder {
         if (new HashSet<>(tasks.stream().map(ExecutionTask::getId).toList()).size() != tasks.size()) {
             throw new IllegalArgumentException("Task ids must be unique");
         }
-        return new ExecutionOrder(serviceOrderId, tasks, ExecutionOrderStatus.QUEUED,
+        return new ExecutionOrder(serviceOrderId, sagaId, tasks, ExecutionOrderStatus.QUEUED,
                 Instant.now(), null, null);
     }
 
@@ -60,6 +63,10 @@ public class ExecutionOrder {
             this.status = ExecutionOrderStatus.COMPLETED;
             this.finishedAt = Instant.now();
         }
+    }
+
+    public boolean isTaskCompleted(UUID taskId) {
+        return findTask(taskId).isCompleted();
     }
 
     public boolean isCompleted() {
@@ -82,6 +89,7 @@ public class ExecutionOrder {
     }
 
     public UUID getServiceOrderId() { return serviceOrderId; }
+    public UUID getSagaId() { return sagaId; }
     public List<ExecutionTask> getTasks() { return Collections.unmodifiableList(tasks); }
     public ExecutionOrderStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }

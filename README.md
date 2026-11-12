@@ -12,7 +12,7 @@ Faz parte do sistema de gestão de oficina mecânica, que na Fase 4 foi dividido
 | `fiap-tech-challenge-os-service` | Serviço de OS (orquestrador da saga) |
 | `fiap-tech-challenge-os-infrastructure` | VPC, EKS compartilhado, New Relic e tópico SNS |
 
-> **Estado atual:** esqueleto do serviço com o domínio, os casos de uso, a persistência em DynamoDB e a API REST usada pelos mecânicos. O **handler do comando `EnqueueExecution` (SQS)** e a publicação do evento `ExecutionCompleted` (SNS) entram no próximo PR; até lá, as ordens só entram na fila pelos testes.
+> **Estado atual:** o serviço recebe o comando `EnqueueExecution` pela fila SQS `execution-commands`, expõe a fila de trabalho aos mecânicos por REST e avisa a saga com o evento `ExecutionCompleted` pelo tópico SNS `saga-events` quando a última tarefa termina (seção "Mensageria").
 
 ## Responsabilidade
 
@@ -32,6 +32,29 @@ Regras de consistência:
 - **Transições estritas:** só inicia tarefa `PENDING` e só conclui tarefa `IN_PROGRESS`. O monólito aceitava concluir sem iniciar, o que quebrava a média de tempo; aqui isso vira `409 Conflict`.
 - **Concorrência:** dois mecânicos podem concluir tarefas da mesma OS ao mesmo tempo. Cada gravação usa um atributo de versão (lock otimista do DynamoDB); quem chega com a versão antiga recebe `409` e repete, sem sobrescrever a alteração do outro.
 - **Tempo de execução da OS** = da entrada na fila (OS em `IN_EXECUTION`) até a conclusão da última tarefa.
+
+## Mensageria
+
+O comando chega pela fila `execution-commands`; as respostas e o aviso de conclusão saem para o tópico `saga-events`, que alimenta a fila do OS. Todas as mensagens usam o mesmo envelope JSON:
+
+```json
+{ "messageId": "…", "sagaId": "…", "serviceOrderId": "…", "type": "EnqueueExecution", "payload": { … } }
+```
+
+| Mensagem | Direção | `payload` |
+|---|---|---|
+| `EnqueueExecution` | recebida | `tasks: [{ taskId, serviceId, serviceName, serviceType }]` |
+| `ExecutionEnqueued` | publicada | (vazio) |
+| `ExecutionEnqueueFailed` | publicada | `reason` |
+| `ExecutionCompleted` | publicada ao concluir a última tarefa (via REST dos mecânicos) | (vazio) |
+
+- **A ordem guarda o `sagaId`:** é ele que permite avisar a saga certa quando o último serviço termina.
+- **Ordem inválida não é falha técnica:** sem tarefas ou com ids repetidos, a resposta é `ExecutionEnqueueFailed`, e o OS estorna o pagamento e libera o estoque.
+- **Reentrega segura:** repetir `EnqueueExecution` devolve a ordem existente sem apagar o progresso, e o `messageId` da resposta é derivado do `messageId` do comando.
+- **`ExecutionCompleted` tem um id por saga** (derivado do `sagaId`). O DynamoDB não tem transação com o SNS: a ordem é gravada e depois o evento é publicado. Se a publicação falha, o mecânico recebe erro e repete o "concluir"; como a tarefa já está concluída e a ordem completa, o serviço publica o evento de novo (mesmo id, o OS descarta a repetição) em vez de responder 409 e deixar a saga esperando para sempre.
+- **Falha vai para a DLQ:** JSON inválido ou tipo desconhecido não são confirmados; o SQS reentrega e, passado o máximo de tentativas da fila, move para `execution-commands-dlq`.
+- **Filas são do Terraform:** o serviço não cria filas e falha na subida se `execution-commands` não existir.
+- Variáveis: `COMMANDS_QUEUE` (padrão `execution-commands`), `EVENTS_TOPIC_ARN` (o `deploy-aws.yml` monta a partir da conta e da região) e `MESSAGING_ENABLED` (`false` desliga o listener, usado no `docker compose` isolado e em testes que não usam filas).
 
 ## Arquitetura
 
@@ -74,10 +97,10 @@ A análise de tempo médio, que no monólito ficava em `/service-orders/analytic
 ## Como rodar localmente
 
 ```bash
-docker compose up --build        # DynamoDB Local + serviço em http://localhost:8083
+docker compose up --build        # DynamoDB Local + serviço em http://localhost:8083 (sem filas)
 ```
 
-Para chamar a API é preciso um JWT assinado com o mesmo `JWT_SECRET`, contendo a claim `role` (o segredo de desenvolvimento está em `application.yml`). Sem o handler SQS ainda não há como enfileirar uma ordem fora dos testes.
+Para chamar a API é preciso um JWT assinado com o mesmo `JWT_SECRET`, contendo a claim `role` (o segredo de desenvolvimento está em `application.yml`). Sem as filas (`MESSAGING_ENABLED=false` neste compose) não há como enfileirar uma ordem; o ambiente completo com LocalStack fica no repositório do OS.
 
 ## Testes e qualidade
 
@@ -87,6 +110,7 @@ mvn verify        # testes unitários + integração (Testcontainers/DynamoDB Lo
 
 - Cobertura atual: ~96% de instruções (gate do build: 80%). Relatório em `target/site/jacoco/`.
 - `ArchitectureTest` falha o build se uma camada violar a regra de dependência.
+- `SagaMessagingIntegrationTest` roda o serviço contra SQS, SNS e DynamoDB reais (LocalStack): enfileirar, ordem inválida, comando repetido, aviso de conclusão (e sua repetição) e mensagem que vai para a DLQ.
 - `ExecutionApiIntegrationTest` sobe o serviço inteiro contra um DynamoDB Local (a tabela é criada pelo próprio serviço) e cobre segurança, REST e persistência: fila, ordem concluída do início ao fim, transições inválidas, idempotência do enfileiramento e a detecção de gravações concorrentes.
 - Análise estática e quality gate no **SonarQube Cloud** (step do CI, ativo quando o secret `SONAR_TOKEN` existe).
 
