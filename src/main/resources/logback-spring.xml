@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- New Relic's agent injects trace.id/span.id into the MDC (when
+         application_logging.local_decorating is enabled) — LogstashEncoder
+         surfaces every MDC entry as a JSON field automatically, giving us
+         request correlation for free, no manual MDC wiring needed. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
